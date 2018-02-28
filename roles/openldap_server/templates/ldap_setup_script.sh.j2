@@ -1,0 +1,119 @@
+#!/bin/bash
+# 
+# {{ ansible_managed }}
+
+# ldap_setup_script.sh	- Setup script to perform initial setup of OpenLDAP server
+# 
+# Information based on https://www.server-world.info/en/note?os=CentOS_7&p=openldap&f=1
+
+
+### PARAMETERS
+adminpw={{ ldap_admin_pw }}
+managerdn="{{ ldap_manager_dn }}"
+managerpw={{ ldap_manager_pw }}
+
+basedn="{{ ldap_base_dn }}"
+base_dc="{{ ldap_organisation }}"
+base_o="{{ ldap_organisation }}"
+####
+
+admin_ssha=$(slappasswd -s $adminpw)
+manager_ssha=$(slappasswd -s $managerpw)
+
+
+ldapadd -Y EXTERNAL -H ldapi:/// <<EOF
+dn: olcDatabase={0}config,cn=config
+changetype: modify
+add: olcRootPW
+olcRootPW: $admin_ssha
+EOF
+
+
+### 4 ###
+# replace to your own domain name for "dc=***,dc=***" section
+# specify the password generated above for "olcRootPW" section
+
+ldapmodify -Y EXTERNAL -H ldapi:/// <<EOF
+dn: olcDatabase={1}monitor,cn=config
+changetype: modify
+replace: olcAccess
+olcAccess: {0}to * by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read by dn.base="$managerdn" read by * none
+
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+replace: olcSuffix
+olcSuffix: $basedn
+
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+replace: olcRootDN
+olcRootDN: $managerdn
+
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+add: olcRootPW
+olcRootPW: $manager_ssha
+
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+add: olcAccess
+olcAccess: {0}to attrs=userPassword,shadowLastChange by dn="$managerdn" write by anonymous auth by self write by * none
+olcAccess: {1}to dn.base="" by * read
+olcAccess: {2}to * by dn="$managerdn" write by * read
+
+EOF
+
+ldapadd -x -D $managerdn -w $managerpw <<EOF
+dn: $basedn
+objectClass: top
+objectClass: dcObject
+objectclass: organization
+o: $base_o
+dc: $base_dc
+
+dn: $managerdn
+objectClass: organizationalRole
+cn: Manager
+description: Directory Manager
+
+#dn: ou=people,$basedn
+#objectClass: organizationalUnit
+#ou: people
+
+#dn: ou=groups,$basedn
+#objectClass: organizationalUnit
+#ou: groups
+
+#dn: ou=SURFnet test foo,ou=people,$basedn
+#objectClass: organizationalUnit
+#ou:SURFnet test foo
+
+#dn: ou=People,ou=SURFnet test foo,ou=people,$basedn
+#objectClass: organizationalUnit
+#ou:People
+EOF
+
+
+{% if ldap_sync is defined and  ldap_sync %}
+
+####
+### Replication via syncrepl 
+##
+
+ldapadd -Y EXTERNAL -H ldapi:/// <<EOF
+dn: olcDatabase={2}hdb,cn=config
+changetype: modify
+add: olcSyncRepl
+olcSyncRepl: rid=101
+  provider="{{ ldap_sync_url }}"
+  bindmethod=simple
+  binddn="{{ ldap_sync_binddn }}"
+  credentials="{{ ldap_sync_credentials }}"
+  searchbase="{{ ldap_sync_searchbase }}"
+  scope=sub
+  schemachecking=on
+  type=refreshOnly
+  retry="30 5 300 3"
+  interval=00:00:05:00
+EOF
+{% endif %}

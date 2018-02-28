@@ -1,0 +1,54 @@
+---
+# tasks file for openldap_server
+
+- name: Install OpenLDAP
+  package:
+    name: "{{ item }}"
+    state: installed
+  with_items:
+    - openldap
+    - compat-openldap
+    - openldap-clients
+    - openldap-servers
+    - openldap-servers-sql
+    - openldap-devel
+
+- name: copy DB_CONFIG
+  copy:
+    remote_src: true
+    src: /usr/share/openldap-servers/DB_CONFIG.example
+    dest: /var/lib/ldap/DB_CONFIG
+    owner: ldap
+    group: ldap
+
+- name: Enable OpenLDAP
+  service:
+    name: slapd
+    state: started
+    enabled: true
+
+- name: Copy custom schemas
+  copy:
+    src: custom_schema
+    dest: /etc/openldap/
+
+- name: Import schemas
+  command: ldapadd -Y EXTERNAL -H ldapi:/// -f /etc/openldap/{{ item }}.ldif
+  with_items:
+    - schema/cosine
+    - schema/nis
+    - schema/inetorgperson
+    - custom_schema/eduperson
+    - custom_schema/edumember
+    - custom_schema/ldappublickey
+
+- name: Generate setup script
+  template: 
+    mode: 0700
+    owner: root
+    src: ldap_setup_script.sh.j2
+    dest: /root/ldap_setup_script.sh
+
+- name: Execute setup script
+  command: /root/ldap_setup_script.sh
+

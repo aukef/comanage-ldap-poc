@@ -1,0 +1,107 @@
+- hosts: client
+  become: yes
+
+  vars:
+    # Make sure the IP address specified here matches the IP
+    # address for the server VM, as set in servers.json.
+    ldap_server_uri: "ldap://server"
+
+    # The ldap_search_base must be set to the LDAP servers' 
+    # basedn which contains users & groups. In this PoC, it is
+    # dictated by the COmanage LDAP server.  It should match
+    # the base_dn in the server.yml playbook.
+    ldap_search_base: "ou=people,dc=surfnet,dc=nl"
+
+
+  tasks:
+    # The COmanage LDAP server sets the default shell for users to 
+    # tcsh.  Install this shell so users are able to login.
+    - name: Install tcsh (default COmanage shell...)
+      package:
+        name: tcsh
+        state: installed
+
+    # Workaround for the fact that the Vagrant environment does not
+    # have proper DNS.  The Client will need to know the IP address
+    # of the Server.
+    - name: Setup hosts
+      lineinfile:
+        dest: /etc/hosts
+        line: "192.168.0.11   server"
+
+    # Users will not have a homedirectory.  This will automatically
+    # create one if it does not exist.  May not be suitable for 
+    # production use.
+    - name: Enable mkhomedir
+      command: authconfig --enablemkhomedir --update
+
+
+    - name: install SSSD
+      package:
+        name: sssd
+        state: installed
+
+    - name: Copy SSSD config
+      copy: 
+        mode: 0600
+        dest: /etc/sssd/sssd.conf
+        content: |
+          [sssd]
+          domains = COMANAGE
+          # the SSH service enables the sss_ssh_authorizedkeys command,
+          # which obtains the users' public SSH key from LDAP.
+          # This is used in the SSH server configuration, below.
+          services = nss, pam, ssh
+          config_file_version = 2
+          sbus_timeout = 30
+          debug_level = 5
+
+          [nss]
+          filter_groups = root
+          filter_users = root
+
+          [pam]
+          offline_credentials_expiration = 0
+
+          [domain/COMANAGE]
+          description = COmanage LDAP
+          enumerate = false
+          cache_credentials = TRUE
+
+          id_provider = ldap
+          auth_provider = ldap
+          ldap_schema = rfc2307
+          chpass_provider = ldap
+
+          ldap_uri = {{ ldap_server_uri }}
+          ldap_search_base = {{ ldap_search_base }}
+          ldap_user_gecos = cn
+          ldap_user_member_of = isMemberOf
+
+    - name: Start SSSD
+      service:
+        name: sssd
+        state: started
+        enabled: yes
+
+    # The AuthorizedKeysCommand is used instead of a AuthorizedKeysFile.
+    # Instead of reading ~/.ssh/authorized_keys,  the users' pubkey is
+    # retrieved from the LDAP server with sss_ssh_authorizedkeys <user>
+    - name: Configure SSH 1/2
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        line: "AuthorizedKeysCommand /usr/bin/sss_ssh_authorizedkeys"
+        insertafter: "#AuthorizedKeysCommand "
+        state: present
+    - name: Configure SSH 2/2
+      lineinfile:
+        dest: /etc/ssh/sshd_config
+        line:  "AuthorizedKeysCommandUser root"
+        insertafter: "#AuthorizedKeysCommandUser "
+        state: present
+    - name: Restart SSH
+      service:
+        name: sshd
+        state: restarted
+        enabled: yes
+

@@ -1,0 +1,33 @@
+---
+- hosts: server
+  become: true
+
+  vars:
+    #
+    # LDAP Sync settings. Should be provided by the SURF comanage team
+    #
+    ldap_sync: true
+    ldap_sync_url: "ldaps://ldap.pilot.scz.lab.surf.nl"
+    ldap_sync_searchbase: "ou=SURFnet test foo,ou=people,dc=surfnet,dc=nl"
+    ldap_sync_binddn: "ENTER_YOUR_LDAP_SYNC_USER_DN"
+    ldap_sync_credentials: "ENTER_YOUR_LDAP_SYNC_USER_PASSWORD"
+
+    # These variables are used for setting up the LDAP base DN.
+    # Since we are replicating the SURF COmanage LDAP server, 
+    # Organisation and base DN are setup accordingly. 
+    ldap_base_dn: "dc=surfnet,dc=nl"
+    ldap_organisation: "Surfnet"
+
+    # ldap_admin_pw determines the olcRootPW, ie. the global admins' 
+    # password
+    ldap_admin_pw: "blaat"
+
+    # The username/password that will be the administrator for the
+    # LDAP database we're setting up
+    ldap_manager_dn: "cn=manager,{{ldap_base_dn}}"
+    ldap_manager_pw: "test"
+
+
+  roles:
+    - openldap_server
+
