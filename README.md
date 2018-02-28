@@ -19,7 +19,11 @@ client is configured to authenticate users against this server.
 
 Caveats
 -------
-The OpenLDAP server playbook (server.yml) behaves poorly when
+ * The client and server VM have hardcoded IP addresses for this 
+PoC.  Make sure that 192.168.0.11 and 192.168.0.12 are usable
+in your test-setup. 
+
+ * The OpenLDAP server playbook (server.yml) behaves poorly when
 executed multiple times.  It is not idempotent,  because the
 OpenLDAP configuration is done by executing LDIF's with 
 changetype 'add'. Effectively,  re-provisioning the server will
